@@ -40,23 +40,30 @@ void Release();
 void TimeOut();
 void List(char * type);
 void PrintPCB();
+char * GetName(char *cmd);
+int GetNumber(char * cmd);
 queue * GetRunPro(queue ** ready_Q);
 
 int main(){
 	char cmd[20];
+	int cmd_i = 0;
 	queue * running_pro = (queue *)malloc(sizeof(queue));
 	running_pro->Pro = NULL;
 	queue * ready_queue[3];
 	resource * res[4];
 	while (1) {
 		printf("shell>");
-		scanf("%s", cmd);
+		cmd_i = 0;
+		while ((cmd[cmd_i] = getchar()) != '\n'){
+			cmd_i++;
+		}
+		cmd[cmd_i] = '\0';
 		if (0==strncmp(cmd, "-init",5)) {
 			Init(ready_queue,res,running_pro);
-		}/*
-		else if (strncmp(cmd, "-cr ", 4)) {
-			Create(ready_queue,cmd,1,1);
 		}
+		else if (0==strncmp(cmd, "-cr ", 4)) {
+			Create(ready_queue,GetName(cmd),READY,GetNumber(cmd),running_pro);
+		}/*
 		else if (strncmp(cmd, "-de ", 4)) {
 			Delete();
 		}
@@ -84,6 +91,7 @@ int main(){
 		else {
 			printf("Please enter the right command\n");
 		}
+		fflush(stdin);
 	}
     return 0;
 }
@@ -130,8 +138,13 @@ void Init(queue ** ready_Q, resource ** Res, queue * running_pro) {
 void Create(queue ** ready_Q, char * name, int status, int priority, queue * running_pro) {
 	queue * temp = (queue *)malloc(sizeof(queue));
 	temp->next = ready_Q[priority]->next;//head insert
+	temp->Pro = (process *)malloc(sizeof(process));
 	if (!ready_Q[priority]->next) {
 		ready_Q[priority]->next = (queue *)malloc(sizeof(process));
+		ready_Q[priority]->next = temp;
+	}
+	else {
+		temp->next = ready_Q[priority]->next;
 		ready_Q[priority]->next = temp;
 	}
 	strcpy(temp->Pro->PID, name);
@@ -142,7 +155,7 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 	}
 	temp->Pro->parent = running_pro->Pro;
 	if (!running_pro->Pro->child) {
-		running_pro->Pro = (process *)malloc(sizeof(process));
+		//running_pro->Pro = (process *)malloc(sizeof(process));
 		running_pro->Pro->child = temp->Pro;
 	}
 	else {
@@ -154,7 +167,7 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 		temp->Pro->child_next = temp_child;
 	}
 	temp->Pro->child = NULL;
-	
+	Scheduler(ready_Q, running_pro);
 }
 
 void Scheduler(queue ** ready_Q, queue * running_pro){
@@ -180,7 +193,7 @@ void Scheduler(queue ** ready_Q, queue * running_pro){
 		return;
 	}
 	int pri = running_pro->Pro->priority;
-	if (running_pro->Pro->priority > pri)return;
+	if (temp_running->next->Pro->priority <= pri)return;
 	running_pro->Pro->status = READY;
 	temp_running->next->Pro->status = RUNNING;
 	
@@ -191,7 +204,48 @@ void Scheduler(queue ** ready_Q, queue * running_pro){
 	running_pro->Pro = temp_running->next->Pro;
 	temp_running->next = NULL;
 }
+char * GetName(char *cmd) {
+	char *name = (char *)malloc(10 * sizeof(char));
+	int i = 0, j = 0;
+	while (' '!= cmd[i]) {
+		i++;
+	}
+	while (' ' == cmd[i]) {
+		i++;
+	}
+	while ((' ' != cmd[i])&&(j<9)&&(i<20)) {
+		name[j] = cmd[i];
+		j++;
+		i++;
+	}
+	name[j] = '\0';
+	return name;
+}
+int GetNumber(char * cmd) {
+	int flag = 0;
+	for (int i = 0; i < 20; i++) {
+		if ( ' ' == cmd[i] ) {
+			if (0 == flag) {
+				flag++;
+			}
+			if (2 == flag) {
+				flag++;
+			}
+		}
+		if (' ' != cmd[i]) {
+			if (1 == flag) {
+				flag++;
+			}
+			if (3 == flag) {
+				return cmd[i] - '0';
+			}
+			
+		}
+		
+	}
 
+	return 0;
+}
 queue * GetRunPro(queue ** ready_Q) {
 	return NULL;
 }
