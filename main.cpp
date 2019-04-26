@@ -37,9 +37,9 @@ void Scheduler(queue ** ready_Q, queue * running_pro);
 void Delete();
 void Request();
 void Release();
-void TimeOut();
-void List(char * type);
-void PrintPCB();
+void TimeOut(queue ** ready_Q,queue * running_pro);
+void List(queue ** ready_Q, resource ** Res, queue * running_pro,int status);
+void ListReady(queue * Q_pointer, int priority);
 char * GetName(char *cmd);
 int GetNumber(char * cmd);
 queue * GetRunPro(queue ** ready_Q);
@@ -58,7 +58,7 @@ int main(){
 			cmd_i++;
 		}
 		cmd[cmd_i] = '\0';
-		if (0==strncmp(cmd, "-init",5)) {
+		if (0==strcmp(cmd, "-init")) {
 			Init(ready_queue,res,running_pro);
 		}
 		else if (0==strncmp(cmd, "-cr ", 4)) {
@@ -72,22 +72,21 @@ int main(){
 		}
 		else if (strncmp(cmd, "-rel ", 5)) {
 			Release();
+		}*/
+		else if (0==strcmp(cmd, "-to")) {
+			TimeOut(ready_queue, running_pro);
 		}
-		else if (strcmp(cmd, "-to")) {
-			TimeOut();
+		else if (0==strcmp(cmd, "-list ready")) {
+			List(ready_queue, res, running_pro,READY);
 		}
-		else if (strcmp(cmd, "-list ready")) {
-			List("ready");
-		}
+		/*
 		else if (strcmp(cmd, "-list block")) {
 			List("block");
 		}
 		else if (strcmp(cmd, "-list res")) {
 			List("resourse");
 		}
-		else if (strncmp(cmd, "-pr ", 4)) {
-			PrintPCB();
-		}*/
+		*/
 		else {
 			printf("Please enter the right command\n");
 		}
@@ -184,25 +183,85 @@ void Scheduler(queue ** ready_Q, queue * running_pro){
 	while (temp_running->next->next) {
 		temp_running = temp_running->next;
 	}
-	//When call Init();
+	//When call Init or TimeOut;
 	if (!running_pro->Pro) {
 		temp_running->next->Pro->status = RUNNING;
 		running_pro->Pro = temp_running->next->Pro;
 		running_pro->next = NULL;
 		temp_running->next = NULL;
+		printf("Process %s is running!\n", running_pro->Pro->PID);
 		return;
 	}
 	int pri = running_pro->Pro->priority;
-	if (temp_running->next->Pro->priority <= pri)return;
+	if (temp_running->next->Pro->priority <= pri) {
+		printf("Process %s is running!\n", running_pro->Pro->PID);
+		return;
+	}
 	running_pro->Pro->status = READY;
 	temp_running->next->Pro->status = RUNNING;
-	
+	printf("Process %s is ready,", running_pro->Pro->PID);
 	queue * temp_ready = (queue *)malloc(sizeof(queue));
 	temp_ready->Pro = running_pro->Pro;
 	temp_ready->next = ready_Q[pri]->next;
 	ready_Q[pri]->next = temp_ready;
 	running_pro->Pro = temp_running->next->Pro;
 	temp_running->next = NULL;
+	printf("Process %s is running!\n", running_pro->Pro->PID);
+}
+void TimeOut(queue ** ready_Q, queue * running_pro) {
+	int pri = running_pro->Pro->priority;
+	queue * temp_next = (queue *)malloc(sizeof(queue));
+	running_pro->Pro->status = READY;
+	temp_next->Pro = ready_Q[pri]->next->Pro;
+	temp_next->next = ready_Q[pri]->next->next;
+	if (!ready_Q[pri]->next) {
+		ready_Q[pri]->next = (queue *)malloc(sizeof(queue));
+	}
+	//put the running_pro in the queue;
+	ready_Q[pri]->next->Pro = running_pro->Pro;
+	ready_Q[pri]->next->next = temp_next;
+	printf("Process %s is ready,", running_pro->Pro->PID);
+	running_pro->next = NULL;
+	running_pro->Pro = NULL;
+	//now pre-running_pro is in the ready queue;
+	Scheduler(ready_Q, running_pro);
+}
+void List(queue ** ready_Q, resource ** Res, queue * running_pro, int status) {
+	switch (status) {
+	case RUNNING:
+		printf("Running:%s\n", running_pro->Pro->PID);
+		return;
+	case READY:
+		for (int i = 2; i >= 0; i--) {
+			ListReady(ready_Q[i], i);
+		}
+		return;
+	case BLOCK:
+		return;
+	default:
+		return;
+	}
+}
+void ListReady(queue * Q_pointer, int priority) {
+	if (NULL== Q_pointer->next) {
+		printf("Ready queue of priority %d:", priority);
+		if (NULL != Q_pointer->Pro) {
+			printf("%s", Q_pointer->Pro->PID);
+		}
+		else {
+			printf("\n");
+		}
+	}
+	else {
+		ListReady(Q_pointer->next, priority);
+		if (NULL != Q_pointer->Pro->PID) {
+			printf("-%s", Q_pointer->Pro->PID);
+		}
+		else {
+			printf("\n");
+		}
+		
+	}
 }
 char * GetName(char *cmd) {
 	char *name = (char *)malloc(10 * sizeof(char));
