@@ -33,6 +33,7 @@ struct resource {
 
 void Init(queue ** ready_Q, resource ** Res, queue * running_pro);
 void Create(queue ** ready_Q, char * name, int status, int priority, queue * running_pro);
+void QueueIn(queue ** ready_Q,int priority, queue * target);
 void Scheduler(queue ** ready_Q, queue * running_pro);
 void Delete();
 void Request();
@@ -105,7 +106,10 @@ void Init(queue ** ready_Q, resource ** Res, queue * running_pro) {
 		Res[i]->RID[2] = '\0';
 		Res[i]->total_amount = i+1;
 		Res[i]->available_amount = i+1;
-		Res[i]->waiting_list = NULL;
+		//Create the head of the waiting queue
+		Res[i]->waiting_list = (queue *)malloc(sizeof(queue));
+		Res[i]->waiting_list->next = NULL;
+		Res[i]->waiting_list->Pro = NULL;
 	}
 	for (int i = 0; i < 3; i++) {
 		//Initial the ready queue
@@ -138,14 +142,7 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 	queue * temp = (queue *)malloc(sizeof(queue));
 	temp->next = ready_Q[priority]->next;//head insert
 	temp->Pro = (process *)malloc(sizeof(process));
-	if (!ready_Q[priority]->next) {
-		ready_Q[priority]->next = (queue *)malloc(sizeof(process));
-		ready_Q[priority]->next = temp;
-	}
-	else {
-		temp->next = ready_Q[priority]->next;
-		ready_Q[priority]->next = temp;
-	}
+	
 	strcpy(temp->Pro->PID, name);
 	temp->Pro->priority = priority;
 	temp->Pro->status = READY;//ready
@@ -166,9 +163,28 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 		temp->Pro->child_next = temp_child;
 	}
 	temp->Pro->child = NULL;
+
+	QueueIn(ready_Q, priority, temp);
+	/*
+	if (!ready_Q[priority]->next) {
+		ready_Q[priority]->next = (queue *)malloc(sizeof(process));
+		ready_Q[priority]->next = temp;
+	}
+	else {
+		temp->next = ready_Q[priority]->next;
+		ready_Q[priority]->next = temp;
+	}*/
+	
 	Scheduler(ready_Q, running_pro);
 }
-
+void QueueIn(queue ** ready_Q,int priority, queue * target) {
+	target->next = ready_Q[priority]->next;
+	if (!ready_Q[priority]->next) {
+		ready_Q[priority]->next = (queue *)malloc(sizeof(process));
+	}
+	ready_Q[priority]->next = target;
+	
+}
 void Scheduler(queue ** ready_Q, queue * running_pro){
 	queue * temp_running = (queue *)malloc(sizeof(queue));
 	if (NULL!=ready_Q[2]->next) {
@@ -180,6 +196,7 @@ void Scheduler(queue ** ready_Q, queue * running_pro){
 	else {
 		temp_running = ready_Q[0];
 	}
+	//Find the next ready process's pre;
 	while (temp_running->next->next) {
 		temp_running = temp_running->next;
 	}
@@ -200,6 +217,7 @@ void Scheduler(queue ** ready_Q, queue * running_pro){
 	running_pro->Pro->status = READY;
 	temp_running->next->Pro->status = RUNNING;
 	printf("Process %s is ready,", running_pro->Pro->PID);
+
 	queue * temp_ready = (queue *)malloc(sizeof(queue));
 	temp_ready->Pro = running_pro->Pro;
 	temp_ready->next = ready_Q[pri]->next;
@@ -212,6 +230,10 @@ void TimeOut(queue ** ready_Q, queue * running_pro) {
 	int pri = running_pro->Pro->priority;
 	queue * temp_next = (queue *)malloc(sizeof(queue));
 	running_pro->Pro->status = READY;
+	temp_next->next = running_pro->next;
+	temp_next->Pro = running_pro->Pro;
+	QueueIn(ready_Q, pri, temp_next);
+	/*
 	temp_next->Pro = ready_Q[pri]->next->Pro;
 	temp_next->next = ready_Q[pri]->next->next;
 	if (!ready_Q[pri]->next) {
@@ -220,7 +242,9 @@ void TimeOut(queue ** ready_Q, queue * running_pro) {
 	//put the running_pro in the queue;
 	ready_Q[pri]->next->Pro = running_pro->Pro;
 	ready_Q[pri]->next->next = temp_next;
+	*/
 	printf("Process %s is ready,", running_pro->Pro->PID);
+	
 	running_pro->next = NULL;
 	running_pro->Pro = NULL;
 	//now pre-running_pro is in the ready queue;
