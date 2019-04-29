@@ -39,7 +39,8 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 void QueueIn(queue ** ready_Q,int priority, queue * target);
 void QueueInRes(resource ** res, int index, queue * target);
 void Scheduler(queue ** ready_Q, queue * running_pro);
-void Delete();
+void Delete(queue ** ready_Q, char * name, queue * running_pro, resource ** res);
+void Kill(queue * target, resource ** res);
 void Request(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res);
 void Release(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res);
 void ReleaseResource(resource ** res, int amount, queue * running_pro,int index);
@@ -50,7 +51,7 @@ void ListReady(queue * Q_pointer, int priority);
 void ListBlock(queue * Q_pointer, int index);
 char * GetName(char *cmd);
 int GetNumber(char * cmd);
-queue * GetRunPro(queue ** ready_Q);
+queue * FindProPre(queue ** ready_Q, resource ** res, queue * running_pro, char * name);
 
 int main(){
 	char cmd[20];
@@ -71,10 +72,10 @@ int main(){
 		}
 		else if (0==strncmp(cmd, "-cr ", 4)) {
 			Create(ready_queue,GetName(cmd),READY,GetNumber(cmd),running_pro);
-		}/*
-		else if (strncmp(cmd, "-de ", 4)) {
-			Delete();
-		}*/
+		}
+		else if (0==strncmp(cmd, "-de ", 4)) {
+			Delete(ready_queue, GetName(cmd), running_pro, res);
+		}
 		else if (0==strncmp(cmd, "-req ", 5)) {
 			Request(ready_queue, GetName(cmd), GetNumber(cmd), running_pro, res);
 		}
@@ -183,6 +184,21 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 	
 	Scheduler(ready_Q, running_pro);
 }
+void Delete(queue ** ready_Q, char * name, queue * running_pro, resource ** res) {
+	if (0 == running_pro->Pro->priority) {
+		printf("Can't delete init_pro!\n");
+		return;
+	}
+	if (0 == strcmp(running_pro->Pro->PID, name)) {
+		Kill(running_pro,res);
+	}
+}
+void Kill(queue * target, resource ** res) {
+	//GG 只能找名字了
+	if (target->Pro->child) {
+		;
+	}
+}
 void Request(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res) {
 	int res_index = res_name[1] - '1';
 	if (res_index > 3 || res_index < 0 || ('r' != res_name[0] && 'R' != res_name[0]) || amount <= 0) {
@@ -266,7 +282,7 @@ int Unblock(queue ** ready_Q, resource ** res,int index) {
 	temp_ready->next->Pro->res_occupied[index] -= (request_amount * 10 - request_amount);
 	temp_ready->next->Pro->status = READY;
 	QueueIn(ready_Q, pri, temp_ready->next);
-	printf("Process %s is ready,", temp_ready->next->Pro->PID);
+	printf("Wake up Process %s,", temp_ready->next->Pro->PID);
 	temp_ready->next = NULL;
 	if (!temp_ready->Pro) {
 		return NOWAITING;
@@ -453,6 +469,34 @@ int GetNumber(char * cmd) {
 
 	return 0;
 }
-queue * GetRunPro(queue ** ready_Q) {
+queue * FindProPre(queue ** ready_Q, resource ** res, queue * running_pro, char * name) {
+	//Not debug yet;
+	if (0 == strcmp(running_pro->Pro->PID, name)) {
+		return running_pro;
+	}
+	queue * temp = (queue *)malloc(sizeof(queue));
+	for (int index=2; index > 0; index--) {
+		if (NULL != ready_Q[index]->next) {
+			temp = ready_Q[index];
+			while (temp->next->next) {
+				if (0 == strcmp(temp->next->Pro->PID, name)) {
+					return temp;
+				}
+				temp = temp->next;
+			}
+		}
+	}
+	for (int i = 0; i < 4; i++) {
+		if (NULL != res[i]->waiting_list->next) {
+			temp = res[i]->waiting_list;
+			while (temp->next->next) {
+				if (0 == strcmp(temp->next->Pro->PID, name)) {
+					return temp;
+				}
+				temp = temp->next;
+			}
+		}
+	}
 	return NULL;
+	
 }
