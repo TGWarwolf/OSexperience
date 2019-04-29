@@ -9,6 +9,9 @@
 #define READY 0
 #define BLOCK 1
 #define RUNNING 2
+#define RESOURCE 3
+#define NOWAITING 999
+
 struct process {
 	char PID[10];
 	/*int res_required[4]; //total rescources this process requires*/
@@ -34,13 +37,17 @@ struct resource {
 void Init(queue ** ready_Q, resource ** Res, queue * running_pro);
 void Create(queue ** ready_Q, char * name, int status, int priority, queue * running_pro);
 void QueueIn(queue ** ready_Q,int priority, queue * target);
+void QueueInRes(resource ** res, int index, queue * target);
 void Scheduler(queue ** ready_Q, queue * running_pro);
 void Delete();
-void Request();
-void Release();
+void Request(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res);
+void Release(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res);
+void ReleaseResource(resource ** res, int amount, queue * running_pro,int index);
+int Unblock(queue ** ready_Q, resource ** res,int index);
 void TimeOut(queue ** ready_Q,queue * running_pro);
-void List(queue ** ready_Q, resource ** Res, queue * running_pro,int status);
+void List(queue ** ready_Q, resource ** res, queue * running_pro,int status);
 void ListReady(queue * Q_pointer, int priority);
+void ListBlock(queue * Q_pointer, int index);
 char * GetName(char *cmd);
 int GetNumber(char * cmd);
 queue * GetRunPro(queue ** ready_Q);
@@ -67,27 +74,26 @@ int main(){
 		}/*
 		else if (strncmp(cmd, "-de ", 4)) {
 			Delete();
-		}
-		else if (strncmp(cmd, "-req ", 5)) {
-			Request();
-		}
-		else if (strncmp(cmd, "-rel ", 5)) {
-			Release();
 		}*/
+		else if (0==strncmp(cmd, "-req ", 5)) {
+			Request(ready_queue, GetName(cmd), GetNumber(cmd), running_pro, res);
+		}
+		else if (0==strncmp(cmd, "-rel ", 5)) {
+			Release(ready_queue, GetName(cmd), GetNumber(cmd), running_pro, res);
+		}
 		else if (0==strcmp(cmd, "-to")) {
 			TimeOut(ready_queue, running_pro);
 		}
 		else if (0==strcmp(cmd, "-list ready")) {
 			List(ready_queue, res, running_pro,READY);
 		}
-		/*
-		else if (strcmp(cmd, "-list block")) {
-			List("block");
+		
+		else if (0==strcmp(cmd, "-list block")) {
+			List(ready_queue, res, running_pro, BLOCK);
 		}
-		else if (strcmp(cmd, "-list res")) {
-			List("resourse");
+		else if (0==strcmp(cmd, "-list res")) {
+			List(ready_queue, res, running_pro, RESOURCE);
 		}
-		*/
 		else {
 			printf("Please enter the right command\n");
 		}
@@ -177,6 +183,97 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 	
 	Scheduler(ready_Q, running_pro);
 }
+void Request(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res) {
+	int res_index = res_name[1] - '1';
+	if (res_index > 3 || res_index < 0 || ('r' != res_name[0] && 'R' != res_name[0]) || amount <= 0) {
+		printf("Please enter the right rescorce.\n");
+		return;
+	}
+	//Error amount;
+	if (amount+running_pro->Pro->res_occupied[res_index] > res[res_index]->total_amount) {
+		printf("There aren't %d Resource %s in total.\n", amount, res[res_index]->RID);
+		return;
+	}
+	//Init_pro can't request resource;
+	if (0 == running_pro->Pro->priority) {
+		printf("Init_pro can't request resource.\n");
+		return;
+	}
+	//There is enough resource;
+	if (amount <= res[res_index]->available_amount) {
+		printf("Process %s requested %d Resouce %s.\n",running_pro->Pro->PID, amount, res[res_index]->RID);
+		running_pro->Pro->res_occupied[res_index] += amount;
+		res[res_index]->available_amount -= amount;
+	}
+	else {
+		//There is not enough resource;
+		queue * temp_next = (queue *)malloc(sizeof(queue));
+		running_pro->Pro->status = BLOCK;
+		running_pro->Pro->res_occupied[res_index] += 10 * amount;//decade is the resource not enough
+		temp_next->next = running_pro->next;
+		temp_next->Pro = running_pro->Pro;
+		QueueInRes(res, res_index, temp_next);
+
+		printf("Process %s is blocked,", running_pro->Pro->PID);
+
+		running_pro->next = NULL;
+		running_pro->Pro = NULL;
+		Scheduler(ready_Q, running_pro);
+	}
+
+}
+void Release(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res) {
+	int res_index = res_name[1] - '1';
+	if (res_index > 3 || res_index < 0 || ('r' != res_name[0] && 'R' != res_name[0]) || amount <= 0) {
+		printf("Please enter the right rescorce.\n");
+		return;
+	}
+	//Error amount;
+	if (amount > running_pro->Pro->res_occupied[res_index] % 10) {
+		printf("There aren't %d Resource %s the process %s occupied.\n", amount, res[res_index]->RID, running_pro->Pro->PID);
+		return;
+	}
+	//Init_pro can't request resource;
+	if (0 == running_pro->Pro->priority) {
+		printf("Init_pro can't request resource.\n");
+		return;
+	}
+	ReleaseResource(res, amount, running_pro, res_index);
+	while(Unblock(ready_Q,res,res_index)<res[res_index]->available_amount) {
+		;
+	}
+	Scheduler(ready_Q, running_pro);
+}
+void ReleaseResource(resource ** res, int amount, queue * running_pro,int index) {
+	res[index]->available_amount += amount;
+	running_pro->Pro->res_occupied[index] -= amount;
+}
+int Unblock(queue ** ready_Q, resource ** res,int index) {
+	if (!res[index]->waiting_list->next) {
+		return NOWAITING;
+	}
+	queue * temp_ready = (queue *)malloc(sizeof(queue));
+	temp_ready = res[index]->waiting_list;
+	while (temp_ready->next->next) {
+		temp_ready = temp_ready->next;
+	}
+	int request_amount = temp_ready->next->Pro->res_occupied[index] / 10;
+	if (request_amount > res[index]->available_amount) {
+		return request_amount;
+	}
+	int pri = temp_ready->next->Pro->priority;
+	res[index]->available_amount -= request_amount;
+	temp_ready->next->Pro->res_occupied[index] -= (request_amount * 10 - request_amount);
+	temp_ready->next->Pro->status = READY;
+	QueueIn(ready_Q, pri, temp_ready->next);
+	printf("Process %s is ready,", temp_ready->next->Pro->PID);
+	temp_ready->next = NULL;
+	if (!temp_ready->Pro) {
+		return NOWAITING;
+	}
+	return temp_ready->Pro->res_occupied[index] / 10;
+
+}
 void QueueIn(queue ** ready_Q,int priority, queue * target) {
 	target->next = ready_Q[priority]->next;
 	if (!ready_Q[priority]->next) {
@@ -184,6 +281,13 @@ void QueueIn(queue ** ready_Q,int priority, queue * target) {
 	}
 	ready_Q[priority]->next = target;
 	
+}
+void QueueInRes(resource ** res, int index, queue * target) {
+	target->next = res[index]->waiting_list->next;
+	if (!res[index]->waiting_list->next) {
+		res[index]->waiting_list->next = (queue *)malloc(sizeof(process));
+	}
+	res[index]->waiting_list->next = target;
 }
 void Scheduler(queue ** ready_Q, queue * running_pro){
 	queue * temp_running = (queue *)malloc(sizeof(queue));
@@ -221,7 +325,8 @@ void Scheduler(queue ** ready_Q, queue * running_pro){
 	queue * temp_ready = (queue *)malloc(sizeof(queue));
 	temp_ready->Pro = running_pro->Pro;
 	temp_ready->next = ready_Q[pri]->next;
-	ready_Q[pri]->next = temp_ready;
+	//ready_Q[pri]->next = temp_ready;
+	QueueIn(ready_Q, pri, temp_ready);
 	running_pro->Pro = temp_running->next->Pro;
 	temp_running->next = NULL;
 	printf("Process %s is running!\n", running_pro->Pro->PID);
@@ -233,16 +338,7 @@ void TimeOut(queue ** ready_Q, queue * running_pro) {
 	temp_next->next = running_pro->next;
 	temp_next->Pro = running_pro->Pro;
 	QueueIn(ready_Q, pri, temp_next);
-	/*
-	temp_next->Pro = ready_Q[pri]->next->Pro;
-	temp_next->next = ready_Q[pri]->next->next;
-	if (!ready_Q[pri]->next) {
-		ready_Q[pri]->next = (queue *)malloc(sizeof(queue));
-	}
-	//put the running_pro in the queue;
-	ready_Q[pri]->next->Pro = running_pro->Pro;
-	ready_Q[pri]->next->next = temp_next;
-	*/
+
 	printf("Process %s is ready,", running_pro->Pro->PID);
 	
 	running_pro->next = NULL;
@@ -250,7 +346,7 @@ void TimeOut(queue ** ready_Q, queue * running_pro) {
 	//now pre-running_pro is in the ready queue;
 	Scheduler(ready_Q, running_pro);
 }
-void List(queue ** ready_Q, resource ** Res, queue * running_pro, int status) {
+void List(queue ** ready_Q, resource ** res, queue * running_pro, int status) {
 	switch (status) {
 	case RUNNING:
 		printf("Running:%s\n", running_pro->Pro->PID);
@@ -261,7 +357,14 @@ void List(queue ** ready_Q, resource ** Res, queue * running_pro, int status) {
 		}
 		return;
 	case BLOCK:
+		for (int i = 0; i < 4; i++) {
+			ListBlock(res[i]->waiting_list, i);
+		}
 		return;
+	case RESOURCE:
+		for (int i = 0; i < 4; i++) {
+			printf("Resource %s:%d\n", res[i]->RID, res[i]->available_amount);
+		}
 	default:
 		return;
 	}
@@ -285,6 +388,27 @@ void ListReady(queue * Q_pointer, int priority) {
 			printf("\n");
 		}
 		
+	}
+}
+void ListBlock(queue * Q_pointer, int index) {
+	if (NULL == Q_pointer->next) {
+		printf("Block queue of R%d:", index + 1);
+		if (NULL != Q_pointer->Pro) {
+			printf("%s", Q_pointer->Pro->PID);
+		}
+		else {
+			printf("\n");
+		}
+	}
+	else {
+		ListBlock(Q_pointer->next, index);
+		if (NULL != Q_pointer->Pro->PID) {
+			printf("-%s", Q_pointer->Pro->PID);
+		}
+		else {
+			printf("\n");
+		}
+
 	}
 }
 char * GetName(char *cmd) {
