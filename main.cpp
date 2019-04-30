@@ -14,7 +14,7 @@
 
 struct process {
 	char PID[10];
-	/*int res_required[4]; //total rescources this process requires*/
+	
 	int res_occupied[4]; //rescource that have be allocation 
 	int status;   //0:ready  1:block 2:running
 	process * parent;
@@ -40,10 +40,10 @@ void QueueIn(queue ** ready_Q,int priority, queue * target);
 void QueueInRes(resource ** res, int index, queue * target);
 void Scheduler(queue ** ready_Q, queue * running_pro);
 void Delete(queue ** ready_Q, char * name, queue * running_pro, resource ** res);
-void Kill(queue * target, resource ** res);
+void Kill(queue * target_pre, queue ** ready_Q, resource ** res, queue * running_pro);
 void Request(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res);
 void Release(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res);
-void ReleaseResource(resource ** res, int amount, queue * running_pro,int index);
+void ReleaseResource(resource ** res, int amount, queue * target,int index);
 int Unblock(queue ** ready_Q, resource ** res,int index);
 void TimeOut(queue ** ready_Q,queue * running_pro);
 void List(queue ** ready_Q, resource ** res, queue * running_pro,int status);
@@ -160,27 +160,17 @@ void Create(queue ** ready_Q, char * name, int status, int priority, queue * run
 	if (!running_pro->Pro->child) {
 		//running_pro->Pro = (process *)malloc(sizeof(process));
 		running_pro->Pro->child = temp->Pro;
+		temp->Pro->child_next = NULL;
 	}
 	else {
 		process * temp_child = running_pro->Pro->child_next;
-		if (!temp_child) {
-			temp_child = (process *)malloc(sizeof(process));
-		}
-		running_pro->Pro->child_next = temp->Pro;
+		
+		running_pro->Pro->child->child_next = temp->Pro;
 		temp->Pro->child_next = temp_child;
 	}
 	temp->Pro->child = NULL;
 
 	QueueIn(ready_Q, priority, temp);
-	/*
-	if (!ready_Q[priority]->next) {
-		ready_Q[priority]->next = (queue *)malloc(sizeof(process));
-		ready_Q[priority]->next = temp;
-	}
-	else {
-		temp->next = ready_Q[priority]->next;
-		ready_Q[priority]->next = temp;
-	}*/
 	
 	Scheduler(ready_Q, running_pro);
 }
@@ -189,15 +179,45 @@ void Delete(queue ** ready_Q, char * name, queue * running_pro, resource ** res)
 		printf("Can't delete init_pro!\n");
 		return;
 	}
-	if (0 == strcmp(running_pro->Pro->PID, name)) {
-		Kill(running_pro,res);
+	Kill(FindProPre(ready_Q, res, running_pro, name), ready_Q, res, running_pro);
+	for (int i = 0; i < 4; i++) {
+		Unblock(ready_Q, res, i);
 	}
+	
+	Scheduler(ready_Q, running_pro);
 }
-void Kill(queue * target, resource ** res) {
+void Kill(queue * target_pre, queue ** ready_Q, resource ** res, queue * running_pro) {
 	//GG 只能找名字了
-	if (target->Pro->child) {
-		;
+	if (!target_pre || !target_pre->next) {
+		printf("Error,not found\n");
+		return;
 	}
+	if (target_pre->next->Pro->child) {
+		queue * pre = (queue *)malloc(sizeof(queue));
+		char name[10];
+		strcpy(name, target_pre->next->Pro->child->PID);
+		pre = FindProPre(ready_Q, res, running_pro, name);
+		while (pre->next->Pro->child_next) {
+			strcpy(name, pre->next->Pro->child_next->PID);
+			queue * temp_next = (queue *)malloc(sizeof(queue));
+			temp_next = pre->next->next;
+			Kill(pre, ready_Q, res, running_pro);
+			pre->next = temp_next;
+			pre = FindProPre(ready_Q, res, running_pro, name);
+		}
+		queue * temp_next = (queue *)malloc(sizeof(queue));
+		temp_next = pre->next->next;
+		Kill(pre, ready_Q, res, running_pro);
+		pre->next = temp_next;
+	}
+	queue * temp_target_next = target_pre->next->next;
+	//free(target_pre->next);
+	for (int i = 0; i < 4; i++) {
+		ReleaseResource(res, target_pre->next->Pro->res_occupied[i], target_pre->next, i);
+	}
+	target_pre->next->Pro = NULL;
+	target_pre->next->next = NULL;
+	target_pre->next = temp_target_next;
 }
 void Request(queue ** ready_Q, char * res_name, int amount, queue * running_pro, resource ** res) {
 	int res_index = res_name[1] - '1';
@@ -260,9 +280,9 @@ void Release(queue ** ready_Q, char * res_name, int amount, queue * running_pro,
 	}
 	Scheduler(ready_Q, running_pro);
 }
-void ReleaseResource(resource ** res, int amount, queue * running_pro,int index) {
+void ReleaseResource(resource ** res, int amount, queue * target,int index) {
 	res[index]->available_amount += amount;
-	running_pro->Pro->res_occupied[index] -= amount;
+	target->Pro->res_occupied[index] -= amount;
 }
 int Unblock(queue ** ready_Q, resource ** res,int index) {
 	if (!res[index]->waiting_list->next) {
@@ -321,7 +341,7 @@ void Scheduler(queue ** ready_Q, queue * running_pro){
 		temp_running = temp_running->next;
 	}
 	//When call Init or TimeOut;
-	if (!running_pro->Pro) {
+	if (!running_pro || !running_pro->Pro) {
 		temp_running->next->Pro->status = RUNNING;
 		running_pro->Pro = temp_running->next->Pro;
 		running_pro->next = NULL;
@@ -471,9 +491,15 @@ int GetNumber(char * cmd) {
 }
 queue * FindProPre(queue ** ready_Q, resource ** res, queue * running_pro, char * name) {
 	//Not debug yet;
-	if (0 == strcmp(running_pro->Pro->PID, name)) {
-		return running_pro;
+	if (running_pro->Pro) {
+		if (0 == strcmp(running_pro->Pro->PID, name)) {
+			queue * running_pre = (queue *)malloc(sizeof(queue));
+			running_pre->Pro = NULL;
+			running_pre->next = running_pro;
+			return running_pre;
+		}
 	}
+	
 	queue * temp = (queue *)malloc(sizeof(queue));
 	for (int index=2; index > 0; index--) {
 		if (NULL != ready_Q[index]->next) {
@@ -483,6 +509,9 @@ queue * FindProPre(queue ** ready_Q, resource ** res, queue * running_pro, char 
 					return temp;
 				}
 				temp = temp->next;
+			}
+			if (0 == strcmp(temp->next->Pro->PID, name)) {
+				return temp;
 			}
 		}
 	}
@@ -494,6 +523,9 @@ queue * FindProPre(queue ** ready_Q, resource ** res, queue * running_pro, char 
 					return temp;
 				}
 				temp = temp->next;
+			}
+			if (0 == strcmp(temp->next->Pro->PID, name)) {
+				return temp;
 			}
 		}
 	}
